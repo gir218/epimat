@@ -1,6 +1,6 @@
 from pymatgen.core.surface import (get_symmetrically_distinct_miller_indices,
                                    get_symmetrically_equivalent_miller_indices)
-from pymatgen.analysis.substrate_analyzer import (fast_norm, vec_angle,
+from pymatgen.analysis.interfaces.zsl import (fast_norm, vec_angle,
                                                   vec_area, ZSLGenerator)
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.analysis.adsorption import reorient_z, get_mi_vec
@@ -8,7 +8,7 @@ from pymatgen.core.periodic_table import Element
 from pymatgen.core.surface import SlabGenerator
 from pymatgen.core.structure import Structure
 from pymatgen.io.xyz import XYZ
-from pymatgen import MPRester
+from pymatgen.ext.matproj import MPRester
 import pymatgen.core.lattice
 
 from monty.fractions import lcm, gcd
@@ -23,8 +23,8 @@ import itertools
 import copy
 import math
 import os
-
 from mpl_toolkits.mplot3d import Axes3D
+from environment import api_key
 
 class Get_Oriented_Crystal_Plane:
     def Get_LMN(self, Miller):
@@ -1423,8 +1423,8 @@ class FilmAnalyzer:
         for [film_vectors, substrate_vectors, film_miller,
              substrate_miller] in surface_vector_sets:
             for match in self.zsl(film_vectors, substrate_vectors, lowest):
-                match['film_miller'] = film_miller
-                match['sub_miller'] = substrate_miller
+                match.film_miller = film_miller # This adds miller attributes to 
+                match.sub_miller = substrate_miller # ZSLMatch class 
                 yield match
 
     def Get_Length_and_FC(self, points, lattice, crystal_sys): ###
@@ -1938,9 +1938,9 @@ class FilmAnalyzer:
 
         for s in substrates:
             sub_num = len(substrates)
-            sub_id = s['material_id']
+            sub_id = s.material_id
             print('sub id',sub_id)
-            init_substrate = s["structure"]
+            init_substrate = s.structure
             sga1 = SpacegroupAnalyzer(init_substrate)
             s_SpGr = sga1.get_space_group_symbol()
             iscrystal_sys = sga1.get_crystal_system()
@@ -1966,9 +1966,9 @@ class FilmAnalyzer:
                 
             for f in tqdm(films):
                 film_num = len(films)
-                film_id = f['material_id']
+                film_id = f.material_id
                 print("FID",film_id)
-                init_film = f["structure"]
+                init_film = f.structure
                 print('film',init_film)
                 sga2 = SpacegroupAnalyzer(init_film)
                 f_SpGr = sga2.get_space_group_symbol()
@@ -1985,8 +1985,12 @@ class FilmAnalyzer:
                     fcrystal_sys = ifcrystal_sys
 
                 print('film',film)
-                    
-                elas_tens = f["elasticity.compliance_tensor"]
+
+                with MPRester(api_key) as mpr:
+                    elas_doc = mpr.elasticity.get_data_by_id(f.material_id)
+                    elas_tens = elas_doc.elasticity.compliance_tensor
+                
+                
                 try:
                     RET = self.ReduceElasTens(elas_tens)
                     s = [x/1000 for x in RET]
@@ -2018,7 +2022,7 @@ class FilmAnalyzer:
                 
                 for match in matches_by_orient:
                     slattice = substrate.lattice
-                    svecs = match['sub_sl_vecs']
+                    svecs = match.substrate_sl_vectors
                     s_alpha = np.around(Vec_Angle_Rad(
                         svecs[0], svecs[1])*(180/np.pi),2)
                     new_match_area = np.around(vec_area(*svecs),2) ###
@@ -2027,7 +2031,7 @@ class FilmAnalyzer:
                         svecs, slattice, scrystal_sys)
 
                     flattice = film.lattice
-                    fvecs = match['film_sl_vecs']
+                    fvecs = match.film_sl_vectors
                     f_alpha = np.around(Vec_Angle_Rad(
                         fvecs[0], fvecs[1])*(180/np.pi),2)
 
@@ -2051,11 +2055,11 @@ class FilmAnalyzer:
                         "film id": film_id,
                         "ff": film.composition.reduced_formula,
                         "f sg": f_SpGr,
-                        "f orient": match["film_miller"],
+                        "f orient": match.film_miller,
                         "sub id": sub_id,
                         "sf": substrate.composition.reduced_formula,
                         "s sg": s_SpGr,
-                        "s orient": match["sub_miller"],
+                        "s orient": match.sub_miller,
                         "area": new_match_area,
                         "fa vector": CfvecsWL[0][0],
                         "fa direction": fa_direction,
@@ -2143,7 +2147,7 @@ class Image_Matches:
         it a variable so that they can be called later.
         '''
         info = D[0]
-        struct = info["structure"]
+        struct = info.structure
         SGA = SpacegroupAnalyzer(struct)
         crystal_sys = SGA.get_crystal_system()
         if crystal_sys in ["monoclinic", "trigonal"]: ###
@@ -2514,18 +2518,18 @@ class Image_Matches:
         length or in angstroms; and whether to strain the film to the
         substrate or save a python generated 2D match image.
         '''
-        mpr = MPRester()
+        mpr = MPRester(api_key)
         for num in self.ms:
             match = self.DF.iloc[num]
             film_id = match["film id"]
             sub_id = match["sub id"]
 
             FoS_F = "F"
-            F = mpr.query({"material_id": film_id}, ['structure'])
+            F = mpr.summary.search(material_ids=[film_id],fields=['structure'])
             [f_miller, Film, f_crystal_sys,
              f_vecs, f_form] = self.Get_Match_Info(match, F, FoS_F)
             f_lattice = Film.lattice
-            S = mpr.query({"material_id": sub_id}, ['structure'])
+            S = mpr.summary.search(material_ids=[sub_id],fields=['structure'])
             FoS_S = "S"
             [s_miller, Substrate, s_crystal_sys,
              s_vecs, s_form] = self.Get_Match_Info(match, S, FoS_S)
@@ -2534,17 +2538,17 @@ class Image_Matches:
             S_vecs_cc = s_lattice.get_cartesian_coords(s_vecs)
             #print('FVCC SVCC', F_vecs_cc,S_vecs_cc)
             #print('FCS SCS',f_crystal_sys,s_crystal_sys)
-            FOXS = F[0]['structure'].composition.oxi_state_guesses()
+            FOXS = F[0].structure.composition.oxi_state_guesses()
             Fox_states = FOXS[0]
-            for fspecies in F[0]['structure'].species:
+            for fspecies in F[0].structure.species:
                 f_str = str(fspecies)
                 if Fox_states[f_str] <= 0:
                     FRE = f_str
                     break
 
-            SOXS = S[0]['structure'].composition.oxi_state_guesses()
+            SOXS = S[0].structure.composition.oxi_state_guesses()
             Sox_states = SOXS[0]
-            for sspecies in S[0]['structure'].species:
+            for sspecies in S[0].structure.species:
                 s_str = str(sspecies)
                 if Sox_states[s_str] <= 0:
                     SRE = s_str
@@ -2644,13 +2648,13 @@ class Image_Matches:
             else:
                 sf = "SF"
             FDF = pd.DataFrame(final_df)
-            FDF.to_csv(r'c:pandas.txt', header=None, index=None, sep=' ')
-            xyz = XYZ.from_file(r'c:\pandas.txt')
+            FDF.to_csv(r'./pandas.txt', header=None, index=None, sep=' ')
+            xyz = XYZ.from_file(r'./pandas.txt')
             xyz_file_name = "{}_{}{}{}_on_{}_{}{}{}_{}_{}.xyz".format(
                 f_form, f_miller[0], f_miller[1], f_miller[2], s_form,
                 s_miller[0], s_miller[1], s_miller[2], num, sf)
             xyz.write_file(xyz_file_name)
-            os.remove(r'c:\pandas.txt')
+            #os.remove(r'./pandas.txt')
     
 def Vec_Angle_Rad(vec1, vec2): # changed here rounding ok?
     '''

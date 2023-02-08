@@ -5,7 +5,7 @@ import time
 names = ["film id","ff","f orient","sub id","sf","s orient","fa vector",
          "fb vector","sa vector","sb vector"]
 cols = [1,2,3,4,5,6,7,8,9,10]
-df = pd.read_csv('C:matching_df.csv', header=0, names=names, usecols=cols)
+df = pd.read_csv('./matching_df.csv', header=0, names=names, usecols=cols)
 
 # USER INPUT STARTS HERE
 '''
@@ -36,7 +36,7 @@ Py_Image = a Bool that determines whether a 2D python figure should be
            generated along with the XYZ file. True = generate the python
            figure. False = DO NOT generate a python figure.
 '''
-matches = [2]
+matches = [1,2,3]
 slab_half_length_x = 1
 slab_half_width_y = 1
 sub_slab_depth_z = 1

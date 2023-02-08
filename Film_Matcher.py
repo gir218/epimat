@@ -1,11 +1,11 @@
-from pymatgen import MPRester
+from pymatgen.ext.matproj import MPRester
 from Film_Matcher_and_Imaging_Definitions import FilmAnalyzer
 import time
 #
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.core.structure import Structure
+from environment import api_key
 #
-mpr = MPRester()
 
 # USER INPUT STARTS HERE
 '''
@@ -51,12 +51,13 @@ films = mpr.query({"material_id": {"$in": ["mp-886", "mp-1243"]}},
                    ['structure', 'material_id',
                     'pretty_formula', 'elasticity.compliance_tensor'])
 '''
-
+'''
 #print(films)
 
 films = mpr.query({"material_id": "mp-2490"},
                   ['structure', 'material_id', 'pretty_formula',
                    'elasticity.compliance_tensor'])
+'''
 '''
 films = mpr.query({"material_id": {"$in": [
     "mp-2133", "mp-1143", "mp-3536", "mp-1265", "mp-5854", "mp-3427",
@@ -92,12 +93,19 @@ substrates = mpr.query({"material_id": {"$in": [
     "mp-2133", "mp-886", "mp-5020", "mp-6930"]}},
                        ['structure', 'material_id', 'pretty_formula'])
 '''
-substrates = mpr.query({"material_id": "mp-149"},
+'''substrates = mpr.query({"material_id": "mp-149"},
                    ['structure', 'material_id', 'pretty_formula'])
+'''                   
 
 
 
-#print(films[11])
+film_ids=[ "mp-2490"]
+substrate_ids=[ "mp-149"]
+
+fields=['structure','material_id','pretty_formula']
+with MPRester(api_key) as mpr:
+    films=mpr.summary.search(material_ids=film_ids,fields=fields)
+    substrates=mpr.summary.search(material_ids=substrate_ids,fields=fields)
 
 film_millers = [(1,0,0),(1,1,0),(1,1,1)]
 substrate_millers = [(1,0,0),(1,1,0),(1,1,1)]
